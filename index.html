@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VERY Airdrop</title>
+    <script src="https://unpkg.com/ethers@5.7.2/dist/ethers.umd.min.js" type="text/javascript"></script>
+</head>
+<body>
+    <h1>VERY Airdrop</h1>
+    <button id="connectButton">Connect Wallet</button>
+    <p id="status"></p>
+    <textarea id="addresses" rows="10" cols="50" placeholder="Enter addresses, one per line"></textarea><br>
+    <input type="text" id="amount" placeholder="Amount of VERY to send per address"><br>
+    <button id="sendButton" disabled>Send Airdrop</button>
+    <p id="progress"></p>
+
+    <script>
+        const chainId = 4613; // VeryNetwork Chain ID
+        const contractAddress = "0x9225716A2ABE0DfA06AdE7984d793Fbd8d6e52f2"; // Replace with your new contract address
+        const abi = [
+            {
+                "inputs": [
+                    {"internalType": "address[]", "name": "recipients", "type": "address[]"},
+                    {"internalType": "uint256", "name": "amount", "type": "uint256"}
+                ],
+                "name": "sendVery",
+                "outputs": [],
+                "stateMutability": "payable",
+                "type": "function"
+            }
+        ];
+
+        const connectButton = document.getElementById('connectButton');
+        let isConnected = false;
+        connectButton.addEventListener('click', async () => {
+            if (isConnected) {
+                alert('Wallet already connected!');
+                return;
+            }
+            if (typeof window.ethereum === 'undefined') {
+                alert('Please install MetaMask to use this website.');
+                return;
+            }
+            try {
+                console.log('Requesting accounts...');
+                await window.ethereum.request({ method: 'eth_requestAccounts' });
+                console.log('Accounts connected');
+                const provider = new _ethers.providers.Web3Provider(window.ethereum);
+                console.log('Provider created');
+                const signer = provider.getSigner();
+                console.log('Signer obtained');
+                const address = await signer.getAddress();
+                console.log('Address fetched:', address);
+                document.getElementById('status').innerText = `Connected: ${address}`;
+
+                console.log('Checking network...');
+                const currentChainId = await provider.getNetwork().then(net => net.chainId);
+                console.log('Current chain ID:', currentChainId);
+                if (currentChainId !== chainId) {
+                    console.log('Switching to VeryNetwork...');
+                    await window.ethereum.request({
+                        method: 'wallet_switchEthereumChain',
+                        params: [{ chainId: `0x${chainId.toString(16)}` }],
+                    });
+                    console.log('Network switched');
+                }
+                console.log('Enabling Send Airdrop button');
+                document.getElementById('sendButton').disabled = false;
+                isConnected = true;
+            } catch (error) {
+                console.error('Connection error:', error.message);
+                alert('Failed to connect wallet: ' + error.message);
+            }
+        });
+
+        const sendButton = document.getElementById('sendButton');
+        let isSending = false;
+        sendButton.addEventListener('click', async () => {
+            if (isSending) {
+                alert('Airdrop already in progress!');
+                return;
+            }
+            const addressesText = document.getElementById('addresses').value;
+            const amountPerAddress = document.getElementById('amount').value;
+            console.log('Addresses entered:', addressesText);
+            console.log('Amount per address:', amountPerAddress);
+            if (!addressesText || !amountPerAddress) {
+                alert('Please enter addresses and amount.');
+                return;
+            }
+            const addresses = addressesText.split('\n').filter(addr => addr.trim() !== '');
+            console.log('Parsed addresses:', addresses);
+            console.log('Number of addresses:', addresses.length);
+            const amountPerAddressWei = _ethers.utils.parseEther(amountPerAddress);
+            console.log('Amount per address in wei:', amountPerAddressWei.toString());
+            const totalWei = amountPerAddressWei.mul(addresses.length);
+            console.log('Total VERY in wei:', totalWei.toString());
+            console.log('Total VERY:', _ethers.utils.formatEther(totalWei));
+            const progress = document.getElementById('progress');
+            progress.innerText = 'Preparing to send airdrop...\n';
+            progress.innerText += `Sending ${amountPerAddress} VERY to ${addresses.length} address(es): ${addresses.join(', ')}\n`;
+
+            const provider = new _ethers.providers.Web3Provider(window.ethereum);
+            const signer = provider.getSigner();
+            const contract = new _ethers.Contract(contractAddress, abi, signer);
+
+            try {
+                isSending = true;
+                sendButton.disabled = true;
+                progress.innerText += 'Calling contract...\n';
+                console.log('Sending transaction with value:', totalWei.toString());
+                const tx = await contract.sendVery(addresses, amountPerAddressWei, { value: totalWei });
+                progress.innerText += `Transaction sent: ${tx.hash}. Waiting for confirmation...\n`;
+                console.log('Transaction hash:', tx.hash);
+                await tx.wait();
+                progress.innerText += 'Airdrop complete!';
+                console.log('Transaction confirmed');
+            } catch (error) {
+                progress.innerText += `Error: ${error.message}`;
+                console.error('Send error:', error.message);
+            } finally {
+                isSending = false;
+                sendButton.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
